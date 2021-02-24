@@ -25,7 +25,7 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
-#include "ulp_main.h"
+#include "ulp_ulp_bme280.h"
 
 
 /*
@@ -242,40 +242,5 @@ static void print_status()
 //    printf("\n");
 //    printf("temp raw : 0x%x 0x%x 0x%x\n", temp_msb, temp_lsb, temp_xlsb);
 //    printf("press raw : 0x%x 0x%x 0x%x\n", pres_msb, pres_lsb, pres_xlsb);
-
-}
-
-// For really low power, check whether your board has a pull up resistor on the SPI Flash
-// SPI Flash requires a pull-up resistor for CS pin, so it goes into standby mode when ESP is in deep sleep.
-//I've put a 100k pull-up resistor and current dropped from 900µA to 75µA with built-in LDO (55µA quiescent current).
-// from https://forum.sparkfun.com/viewtopic.php?t=45931#p194837
-
-void app_main()
-{
-    //Turn on LED while running
-    gpio_pad_select_gpio(LED_GPIO);
-    gpio_set_direction(LED_GPIO, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(LED_GPIO, GPIO_PULLDOWN_ONLY);
-    gpio_set_level(LED_GPIO, 1);
-
-    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    if (cause != ESP_SLEEP_WAKEUP_ULP) {
-        printf("First start - initializing ULP\n");
-        setup();
-    } else {
-        print_status();
-    }
-
-    ulp_reg_config = CONFIG;
-    ulp_reg_ctrl= CTRL_MEAS;
-
-    ESP_ERROR_CHECK( esp_sleep_enable_ulp_wakeup() );
-    ESP_ERROR_CHECK( ulp_run((&ulp_entry - RTC_SLOW_MEM) / sizeof(uint32_t)) );
-
-    printf("Entering deep sleep\n\n");
-    vTaskDelay(20);
-    wake_millis +=  esp_timer_get_time()/1000;
-    gpio_set_level(LED_GPIO, 0);
-    esp_deep_sleep_start();
 
 }
