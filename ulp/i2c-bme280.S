@@ -16,49 +16,47 @@
 
 #define BMP280_REGISTER_PRESS                 (0xF7)	// 0xF7-0xF9
 #define BMP280_REGISTER_TEMP                  (0xFA)	// 0xFA-0xFC
-#define BMP280_REGISTER_END                    0xFC
+#define BMP280_REGISTER_HUM                    (0xFD)	// 0xFD-0xFE
+#define BMP280_REGISTER_END                    0xFE
 
 #define BMP280_REGISTER_DIG_T                 (0x88)	// 0x88-0x8D ( 6)
 #define BMP280_REGISTER_DIG_P                 (0x8E)	// 0x8E-0x9F (18)
-#define BMP280_REGISTER_DIG_END                0x9F
+#define BMP280_REGISTER_DIG_END_P                0x9F
+#define BMP280_REGISTER_DIG_H1                 (0xA1)	// 0xA1-0xE6 (8)
+#define BMP280_REGISTER_DIG_H2                 (0xE1)	// 0xA1-0xE6 (8)
+#define BMP280_REGISTER_DIG_END                0xE8
 
 #define BMP280_ADDR 0x76
 #define BMP280_CTRL_MEAS 0xF4
 #define BMP280_CONFIG 0xF5
+#define BMP280_CTRL_HUM 0xF2
 
 
 
 /* Define variables, which go into .bss section (zero-initialized data) */
 	.bss
 
-    .global reg_config, reg_ctrl
+    .global reg_config, reg_ctrl, reg_ctrl_hum
 
 reg_config: .long 0
 reg_ctrl: .long 0
+reg_ctrl_hum: .long 0
 
-	.global	pres_msb, pres_lsb, pres_xlsb, temp_msb, temp_lsb, temp_xlsb
+	.global	pres_msb, pres_lsb, pres_xlsb, temp_msb, temp_lsb, temp_xlsb, hum_msb, hum_lsb
 pres_msb: .long 0
 pres_lsb: .long 0
 pres_xlsb: .long 0
 temp_msb:	.long 0
 temp_lsb:	.long 0
 temp_xlsb:	.long 0
+hum_msb:	.long 0
+hum_lsb:	.long 0
 
 
-	.global t1, t2, t3, p1, p2, p3, p4, p5, p6, p7, p8, p9;
+	.global trim_param;
 
-t1: .long 0
-t2: .long 0
-t3: .long 0
-p1: .long 0
-p2: .long 0
-p3: .long 0
-p4: .long 0
-p5: .long 0
-p6: .long 0
-p7: .long 0
-p8: .long 0
-p9: .long 0
+trim_param: .space 68
+
 
 
 	/* Code goes into .text section */
@@ -72,10 +70,23 @@ popfail:
 .global readBMP
 readBMP:
     //if t1 == 0 goto initBMP
-	move r1, t1
+	move r1, trim_param
 	ld r0,r1,0
 	jumpr initBMP,1,lt
 didInit:
+	move r1, BMP280_ADDR
+	push r1
+	MOVE r1, BMP280_CTRL_HUM
+	PUSH r1
+	MOVE r0, reg_ctrl_hum
+	ld r1, r0,0
+	PUSH r1
+	psr
+	jump write8
+	add r3,r3,3 // remove 3 arguments from stack
+	move r0,r2 // test for error in r2
+	jumpr fail,1,ge
+
 	move r1, BMP280_ADDR
 	push r1
 	MOVE r1, BMP280_CTRL_MEAS
@@ -144,10 +155,27 @@ didInit:
 	st r0,r2,0
 
 
-	move r2,1 // last byte
+	move r2,0 // last byte
 	psr
 	jump i2c_read_byte
 	move r2, temp_xlsb
+	st r0,r2,0
+//just a test
+//	move r2,1 // last byte
+//	psr
+//	jump i2c_read_byte
+
+
+	move r2,0 // last byte
+	psr
+	jump i2c_read_byte
+	move r2, hum_msb
+	st r0,r2,0
+
+	move r2,0 // last byte
+	psr
+	jump i2c_read_byte
+	move r2, hum_lsb
 	st r0,r2,0
 
     // Done
@@ -191,7 +219,7 @@ initBMP:
 	MOVE r0,r2 // test for error in r2
 	JUMPR fail,1,ge
 
-    MOVE r1, t1
+    MOVE r1, trim_param
     PUSH r1
     MOVE r1, BMP280_ADDR
     PUSH r1
@@ -214,7 +242,63 @@ readok:
 	add r0,r0,2 // r0 += 2
 	st r0,r3,4 // [r3+4] = r0
 
-	jumpr read_cal, BMP280_REGISTER_DIG_END + 2,lt
+	jumpr read_cal, BMP280_REGISTER_DIG_END_P,lt
+	add r3,r3,3
+//read h1
+
+	MOVE r1, trim_param
+	add r1,r1,12 //skip the first 24 bytes which we already read
+    PUSH r1
+    MOVE r1, BMP280_ADDR
+    PUSH r1
+    MOVE r1, BMP280_REGISTER_DIG_H1
+    push r1
+//read_cal:
+	psr
+	jump read16
+//	or r2,r2,0 // test error
+//	jump readok,eq
+//	jump fail
+//readok:
+
+	ld r1,r3,12 // r1 <- [r3 + 12]  r1 = address of third stack param
+	st r0,r1,0  // [r1] <- r0       r0 -> [r1] (result from read16)
+	add r1,r1,1 // r1 += 1          //  increment address of third stack param by 1
+	st r1,r3,12 // [r3+12] = r1 -        next cal parameter address
+
+	ld r0,r3,4  // r0 = [r3 + 4]
+	add r0,r0,2 // r0 += 2
+	st r0,r3,4 // [r3+4] = r0
+add r3,r3,3
+	
+//read hrest
+	MOVE r1, trim_param
+	add r1,r1,13 //skip the first 24 bytes which we already read
+    PUSH r1
+    MOVE r1, BMP280_ADDR
+    PUSH r1
+    MOVE r1, BMP280_REGISTER_DIG_H2
+    push r1
+
+read_cal_1:
+	psr
+	jump read16
+	or r2,r2,0 // test error
+	jump readok_1,eq
+	jump fail
+readok_1:
+	psr
+	jump read16
+	ld r1,r3,12 // r1 <- [r3 + 12]  r1 = address of third stack param
+	st r0,r1,0  // [r1] <- r0       r0 -> [r1] (result from read16)
+	add r1,r1,1 // r1 += 1          //  increment address of third stack param by 1
+	st r1,r3,12 // [r3+12] = r1 -        next cal parameter address
+
+	ld r0,r3,4  // r0 = [r3 + 4]
+	add r0,r0,2 // r0 += 2
+	st r0,r3,4 // [r3+4] = r0
+
+	jumpr read_cal_1, BMP280_REGISTER_DIG_END,lt
 	add r3,r3,3
 	jump didInit
 

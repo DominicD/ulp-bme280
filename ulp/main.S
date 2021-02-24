@@ -7,9 +7,10 @@
 /* Define variables, which go into .bss section (zero-initialized data) */
 	.bss
 
-    .global prev_pres, prev_temp
+    .global prev_pres, prev_temp, prev_hum
 prev_pres:	.long 0
 prev_temp:	.long 0
+prev_hum:	.long 0
 
 	.global	counter
 counter: .long 0
@@ -76,8 +77,26 @@ testPres:
 	psr
 	jump abs
 	// A threshold of 10 is equal to approx 0.39 hPa - adjust as needed
-	jumpr waitNext,17,lt
+	jumpr testHum,17,lt
+	jump wakeUp
 
+testHum:
+	move r1,hum_msb
+	ld r0,r1,0
+	lsh r0,r0,8
+	move r1,hum_lsb
+	ld r1,r1,0
+	or r0,r1,r0
+
+	move r1,prev_hum
+	ld r2,r1,0
+
+	sub r0,r0,r2
+	psr
+	jump abs
+	//
+	jumpr waitNext,100,lt
+	jump wakeUp
 
 wakeUp:
 	/* Check if the system can be woken up */
